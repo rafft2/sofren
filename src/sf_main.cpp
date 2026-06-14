@@ -11,6 +11,8 @@ typedef signed int s32;
 typedef unsigned int u32;
 typedef float f32;
 
+#define MAXIMUM(a, b) ((a) > (b) ? (a) : (b))
+
 struct vec4
 {
     f32 x, y, z, w;
@@ -60,22 +62,17 @@ static inline vec2 PixelCenterFromCoords(u32 x, u32 y)
     return(result);
 }
 
-static inline void WriteLine(u8* image, u32 stride, u32 ax, u32 ay, u32 bx, u32 by, u32 line_size, color_rgba color)
+static inline void WriteLine(u8 *image, u32 stride, vec2 a, vec2 b, color_rgba color)
 {
-    vec2 a = PixelCenterFromCoords(ax, ay);
-    vec2 b = PixelCenterFromCoords(bx, by);
-    f32 dy = b.y - a.y;
-    f32 dx = b.x - a.x;
-    for(u32 x = ax; x <= bx; x++)
+    f32 dx = fabsf(a.x - b.x);
+    f32 dy = fabsf(a.y - b.y);
+    f32 step_count = MAXIMUM(dx, dy);
+    f32 step = 1.0f / step_count;
+    for(f32 t = 0.0f; t <= 1.0f; t += step)
     {
-        f32 y = ((f32)x - (f32)bx) * dy / dx + (f32)by;
-        for(u32 i = 0; i < line_size; i++)
-        {
-            for(u32 j = 0; j < line_size; j++)
-            {
-                WritePixel(image, stride, x - line_size + i, (u32)y - line_size + j, color);
-            }
-        }
+        f32 xt = t * a.x + (1.0f - t) * b.x;
+        f32 yt = t * a.y + (1.0f - t) * b.y; 
+        WritePixel(image, stride, (u32)xt, (u32)yt, color);
     }
 }
 
@@ -96,8 +93,10 @@ int main(void)
         }
     }
     vec4 color = {0.0f, 0.0f, 0.0f, 1.0f};
-    WriteLine(image_data, image_width, 4, 4, 20, 50, 3, ColorFromVec(color));
-    WriteLine(image_data, image_width, 32, 32, 56, 10, 3, ColorFromVec(color));
+    vec4 red = {1.0f, 0.0f, 0.0f, 1.0f};
+    WriteLine(image_data, image_width, PixelCenterFromCoords(4, 4), PixelCenterFromCoords(20, 50), ColorFromVec(color));
+    WriteLine(image_data, image_width, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(color));
+    WriteLine(image_data, image_width, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(red));
     stbi_flip_vertically_on_write(true);
     stbi_write_png("out.png", (s32)image_width, (s32)image_height, (s32)bytes_per_pixel, image_data, (s32)(image_width * bytes_per_pixel));
 
