@@ -9,9 +9,50 @@
 typedef unsigned char u8;
 typedef signed int s32;
 typedef unsigned int u32;
+typedef unsigned int b32;
 typedef float f32;
 
 #define MAXIMUM(a, b) ((a) > (b) ? (a) : (b))
+#define PI32 3.14159265359f
+#define EPSILON32 1e-5f
+
+static inline b32 NearZero(f32 value)
+{
+    return(fabs(value) <= EPSILON32);
+}
+static inline b32 FloatEquals(f32 a, f32 b)
+{
+    return(NearZero(a - b));
+}
+
+struct vec2
+{
+    f32 x, y;
+};
+
+inline vec2 operator+(vec2 &a, vec2 &b)
+{
+    vec2 result;
+    result.x = a.x + b.x;
+    result.y = a.y + b.y;
+    return(result);
+}
+
+inline vec2 operator-(vec2 &a, vec2 &b)
+{
+    vec2 result;
+    result.x = a.x - b.x;
+    result.y = a.y - b.y;
+    return(result);
+}
+
+static inline vec2 PixelCenterFromCoords(u32 x, u32 y)
+{
+    vec2 result;
+    result.x = (f32)x + 0.5f;
+    result.y = (f32)y + 0.5f;
+    return(result);
+}
 
 struct vec4
 {
@@ -44,25 +85,30 @@ static inline color_rgba ColorFromVec(vec4 v)
     return(result);
 }
 
-static inline void WritePixel(u8* image, u32 stride, u32 x, u32 y, color_rgba color)
+struct sf_image
 {
-    memcpy(image + (y * stride + x)*4, color.rgba, 4);
-}
-
-struct vec2
-{
-    f32 x, y;
+    u8* data;
+    u32 width;
+    u32 height;
+    u32 bytes_per_pixel;
 };
 
-static inline vec2 PixelCenterFromCoords(u32 x, u32 y)
+sf_image *SfImageMake(u32 width, u32 height)
 {
-    vec2 result;
-    result.x = (f32)x + 0.5f;
-    result.y = (f32)y + 0.5f;
-    return(result);
+    sf_image *ptr = (sf_image*)malloc(sizeof(sf_image));
+    ptr->width = width;
+    ptr->height = height;
+    ptr->bytes_per_pixel = 4; // NOTE: hardcoded R8B8G8A8 format for PNG
+    ptr->data = (u8*)malloc(width * height * ptr->bytes_per_pixel);
+    return(ptr); 
 }
 
-static inline void WriteLine(u8 *image, u32 stride, vec2 a, vec2 b, color_rgba color)
+static inline void WritePixel(sf_image *image, u32 x, u32 y, color_rgba color)
+{
+    memcpy(image->data + (y * image->width + x)*image->bytes_per_pixel, color.rgba, image->bytes_per_pixel);
+}
+
+static inline void DrawLine(sf_image *image, vec2 a, vec2 b, color_rgba color)
 {
     f32 dx = fabsf(a.x - b.x);
     f32 dy = fabsf(a.y - b.y);
@@ -72,16 +118,33 @@ static inline void WriteLine(u8 *image, u32 stride, vec2 a, vec2 b, color_rgba c
     {
         f32 xt = t * a.x + (1.0f - t) * b.x;
         f32 yt = t * a.y + (1.0f - t) * b.y; 
-        WritePixel(image, stride, (u32)xt, (u32)yt, color);
+        WritePixel(image, (u32)xt, (u32)yt, color);
     }
+}
+
+static inline void DrawRectangle(sf_image *image, vec2 min_corner, vec2 max_corner, color_rgba color)
+{
+    vec2 a = min_corner;
+    vec2 b = {min_corner.x, max_corner.y};
+    vec2 c = max_corner;
+    vec2 d = {max_corner.x, min_corner.y};
+    DrawLine(image, a, b, color);
+    DrawLine(image, b, c, color);
+    DrawLine(image, c, d, color);
+    DrawLine(image, d, a, color);
+}
+
+static inline void SfImageRenderAndWriteToDisk(sf_image *image, const char *filename)
+{
+    stbi_flip_vertically_on_write(true);
+    stbi_write_png(filename, (s32)image->width, (s32)image->height, (s32)image->bytes_per_pixel, image->data, (s32)(image->width * image->bytes_per_pixel));
 }
 
 int main(void)
 {
     u32 image_width = 64;
     u32 image_height = 64;
-    u32 bytes_per_pixel = 4;
-    u8 *image_data = (u8*)malloc(image_width*image_height*4);
+    sf_image *image = SfImageMake(image_width, image_height);
     for(u32 y = 0; y < image_height; y++)
     {
         for(u32 x = 0; x < image_width; x++)
@@ -89,16 +152,16 @@ int main(void)
             f32 py = (f32)((f32)y / (f32)image_height);
             f32 px = (f32)((f32)x / (f32)image_width); 
             vec4 color = {1.0f - py, px, py, 255.0f};
-            WritePixel(image_data, image_width, x, y, ColorFromVec(color));
+            WritePixel(image, x, y, ColorFromVec(color));
         }
     }
-    vec4 color = {0.0f, 0.0f, 0.0f, 1.0f};
+    vec4 black = {0.0f, 0.0f, 0.0f, 1.0f};
     vec4 red = {1.0f, 0.0f, 0.0f, 1.0f};
-    WriteLine(image_data, image_width, PixelCenterFromCoords(4, 4), PixelCenterFromCoords(20, 50), ColorFromVec(color));
-    WriteLine(image_data, image_width, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(color));
-    WriteLine(image_data, image_width, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(red));
-    stbi_flip_vertically_on_write(true);
-    stbi_write_png("out.png", (s32)image_width, (s32)image_height, (s32)bytes_per_pixel, image_data, (s32)(image_width * bytes_per_pixel));
+    vec4 yellow = {1.0f, 1.0f, 0.0f, 1.0f};
+    DrawLine(image, PixelCenterFromCoords(4, 4), PixelCenterFromCoords(20, 50), ColorFromVec(black));
+    DrawRectangle(image, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(yellow));
+    DrawLine(image, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(red));
+    SfImageRenderAndWriteToDisk(image, "out.png");
 
     exit(0);
 }
