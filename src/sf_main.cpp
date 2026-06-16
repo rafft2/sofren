@@ -228,6 +228,12 @@ static inline void SfMeshMake(sf_mesh *mesh, const char *filename)
     mesh->indices = indices;
 }
 
+static inline f32 ComputeTriangleArea(vec2 a, vec2 b, vec2 c)
+{
+    f32 result = 0.5f * ((b.y-a.y)*(b.x+a.x) + (c.y-b.y)*(c.x+b.x) + (a.y-c.y)*(a.x+c.x));
+    return(result);
+}
+
 static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_vertex vc, color_rgba color)
 {
     f32 w = (f32)image->width;
@@ -241,10 +247,6 @@ static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_
     vec2 c = {((vc.px - X_MIN) / (X_MAX - X_MIN)) * w, ((vc.py - Y_MIN) / (Y_MAX - Y_MIN)) * h};
 
 #if 0
-    DrawLine(image, a, b, color);
-    DrawLine(image, b, c, color);
-    DrawLine(image, c, a, color);
-#else
     // suppose that we have vertices 0->1->2 in increasing y order
     vec2 verts[3] = {a, b, c};
     for(u32 i = 0; i < 3; i++)
@@ -338,16 +340,41 @@ static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_
             }
         }
     }
+#else
+    s32 min_x = (s32)MINIMUM(MINIMUM(a.x, b.x), c.x);
+    s32 max_x = (s32)MAXIMUM(MAXIMUM(a.x, b.x), c.x);
+    u32 min_y = (u32)MINIMUM(MINIMUM(a.y, b.y), c.y);
+    u32 max_y = (u32)MAXIMUM(MAXIMUM(a.y, b.y), c.y);
+    f32 total_area = ComputeTriangleArea(a, b, c);
+    if(total_area < 1)
+    {
+        return;
+    }
+
+    for(s32 x = min_x; x <= max_x; x++)
+    {
+        for(u32 y = min_y; y <= max_y; y++)
+        {
+            vec2 p = {(f32)x, (f32)y};
+            f32 alpha = ComputeTriangleArea(p, b, c) / total_area;
+            f32 beta = ComputeTriangleArea(p, c, a) / total_area;
+            f32 gamma = ComputeTriangleArea(p, a, b) / total_area;
+            if(alpha < 0 || beta < 0 || gamma < 0)
+            {
+                continue;
+            }
+            else
+            {
+                WritePixel(image, (u32)x, y, color);
+            }
+        }
+    }
+#endif
 
     color_rgba black = {0, 0, 0, 1};
     DrawLine(image, a, b, black);
     DrawLine(image, b, c, black);
     DrawLine(image, c, a, black);
-
-
-    static int triangle_count = 0;
-    printf("triangle written: %d.\n", triangle_count++);
-#endif
 }
 
 static void SfMeshDraw(sf_image *image, sf_mesh *mesh, color_rgba color)
