@@ -13,6 +13,7 @@ typedef unsigned int b32;
 typedef float f32;
 
 #define MAXIMUM(a, b) ((a) > (b) ? (a) : (b))
+#define MINIMUM(a, b) ((a) < (b) ? (a) : (b))
 #define PI32 3.14159265359f
 #define EPSILON32 1e-5f
 
@@ -238,9 +239,115 @@ static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_
     vec2 a = {((va.px - X_MIN) / (X_MAX - X_MIN)) * w, ((va.py - Y_MIN) / (Y_MAX - Y_MIN)) * h};
     vec2 b = {((vb.px - X_MIN) / (X_MAX - X_MIN)) * w, ((vb.py - Y_MIN) / (Y_MAX - Y_MIN)) * h};
     vec2 c = {((vc.px - X_MIN) / (X_MAX - X_MIN)) * w, ((vc.py - Y_MIN) / (Y_MAX - Y_MIN)) * h};
+
+#if 0
     DrawLine(image, a, b, color);
     DrawLine(image, b, c, color);
     DrawLine(image, c, a, color);
+#else
+    // suppose that we have vertices 0->1->2 in increasing y order
+    vec2 verts[3] = {a, b, c};
+    for(u32 i = 0; i < 3; i++)
+    {
+        for(u32 j = i; j < 3; j++)
+        {
+            if(verts[i].y > verts[j].y)
+            {
+                vec2 tmp = verts[i];
+                verts[i] = verts[j];
+                verts[j] = tmp;
+            }
+        }
+    }
+
+    vec2 low = verts[0];
+    vec2 mid = verts[1];
+    vec2 high = verts[2];
+    vec2 left = verts[0];
+    vec2 right = verts[1];
+    if(left.x > right.x)
+    {
+        left = verts[1];
+        right = verts[0];
+    }
+    u32 low_y = (u32)low.y;
+    u32 mid_y = (u32)mid.y;
+    u32 high_y = (u32)high.y;
+
+    // 1st half, we need segments from verts[0] to verts[1] and verts[0] to verts[2]
+    for(u32 y = low_y; y <= mid_y; y++)
+    {
+        // 1st line (verts[0] to verts[1])
+        f32 m = (verts[1].y - verts[0].y) / (verts[1].x - verts[0].x);
+        u32 start_x = (u32)((((f32)y-verts[0].y)/m) + verts[0].x);
+
+        // 2nd line (verts[0] to verts[2])
+        m = (verts[2].y - verts[0].y) / (verts[2].x - verts[0].x);
+        u32 end_x = (u32)((((f32)y-verts[0].y)/m) + verts[0].x);
+        if(start_x < end_x)
+        {
+            for(u32 x = start_x; x <= end_x; x++)
+            {
+                if(x < image->width && y < image->height)
+                {
+                    WritePixel(image, x, y, color);
+                }
+            }
+        }
+        else
+        {
+            for(u32 x = end_x; x <= start_x; x++)
+            {
+                if(x < image->width && y < image->height)
+                {
+                    WritePixel(image, x, y, color);
+                }
+            }
+        }
+        
+    }
+
+    // 2nd half, we need segments from verts[1] to verts[2] and verts[0] to verts[2]
+    for(u32 y = mid_y; y <= high_y; y++)
+    {
+        // 1st line (verts[1] to verts[2])
+        f32 m = (verts[2].y - verts[1].y) / (verts[2].x - verts[1].x);
+        u32 start_x = (u32)((((f32)y-verts[1].y)/m) + verts[1].x);
+
+        // 2nd line (verts[0] to verts[2])
+        m = (verts[2].y - verts[0].y) / (verts[2].x - verts[0].x);
+        u32 end_x = (u32)((((f32)y-verts[0].y)/m) + verts[0].x);
+        if(start_x < end_x)
+        {
+            for(u32 x = start_x; x <= end_x; x++)
+            {
+                if(x < image->width && y < image->height)
+                {
+                    WritePixel(image, x, y, color);
+                }
+            }
+        }
+        else
+        {
+            for(u32 x = end_x; x <= start_x; x++)
+            {
+                if(x < image->width && y < image->height)
+                {
+                    WritePixel(image, x, y, color);
+                }
+            }
+        }
+    }
+
+    color_rgba black = {0, 0, 0, 1};
+    DrawLine(image, a, b, black);
+    DrawLine(image, b, c, black);
+    DrawLine(image, c, a, black);
+
+
+    static int triangle_count = 0;
+    printf("triangle written: %d.\n", triangle_count++);
+#endif
 }
 
 static void SfMeshDraw(sf_image *image, sf_mesh *mesh, color_rgba color)
@@ -284,7 +391,7 @@ int main(void)
     SfMeshMake(cow, "assets/cow.obj");
     SfMeshDraw(image, cow, ColorFromVec(green));
 
-    SfImageWriteToDisk(image, "out1.png");
+    SfImageWriteToDisk(image, "out.png");
 
     exit(0);
 }
