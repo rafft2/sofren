@@ -103,6 +103,12 @@ sf_image *SfImageMake(u32 width, u32 height)
     return(ptr); 
 }
 
+static inline void SfImageWriteToDisk(sf_image *image, const char *filename)
+{
+    stbi_flip_vertically_on_write(true);
+    stbi_write_png(filename, (s32)image->width, (s32)image->height, (s32)image->bytes_per_pixel, image->data, (s32)(image->width * image->bytes_per_pixel));
+}
+
 static inline void WritePixel(sf_image *image, u32 x, u32 y, color_rgba color)
 {
     memcpy(image->data + (y * image->width + x)*image->bytes_per_pixel, color.rgba, image->bytes_per_pixel);
@@ -134,16 +140,127 @@ static inline void DrawRectangle(sf_image *image, vec2 min_corner, vec2 max_corn
     DrawLine(image, d, a, color);
 }
 
-static inline void SfImageRenderAndWriteToDisk(sf_image *image, const char *filename)
+struct sf_vertex
 {
-    stbi_flip_vertically_on_write(true);
-    stbi_write_png(filename, (s32)image->width, (s32)image->height, (s32)image->bytes_per_pixel, image->data, (s32)(image->width * image->bytes_per_pixel));
+    f32 px, py, pz;
+};
+
+struct sf_mesh
+{
+    sf_vertex *vertices;
+    u32 vertex_count;
+    u32 *indices;
+    u32 index_count;
+};
+
+#include "float.h"
+f32 X_MAX = -FLT_MIN;
+f32 X_MIN = FLT_MAX;
+f32 Y_MAX = -FLT_MIN;
+f32 Y_MIN = FLT_MAX;
+static inline void SfMeshMake(sf_mesh *mesh, const char *filename)
+{
+    FILE *f = fopen(filename, "r");
+    char line[128];
+    u32 vertex_count = 0;
+    u32 index_count = 0;
+    while(fgets(line, 128, f) != NULL)
+    {
+        if(line[0] == 'v')
+        {
+            vertex_count++;
+        }
+        else if(line[0] == 'f')
+        {
+            index_count+=3;
+        }
+    }
+    fseek(f, 0, SEEK_SET);
+    sf_vertex *vertices = (sf_vertex*)malloc(vertex_count * sizeof(sf_vertex) + 1);
+    u32 *indices = (u32*)malloc(index_count * 3 * sizeof(u32));
+    u32 vi = 1;
+    u32 fi = 0;
+    while(fgets(line, 128, f) != NULL)
+    {
+        if(line[0] == 'v')
+        {
+            f32 x, y, z;
+            if(sscanf(line + 1, "%f %f %f", &x, &y, &z) != 3)
+            {
+                printf("error.\n");
+            }
+            vertices[vi++] = {x, y, z};
+            if(x > X_MAX)
+            {
+                X_MAX = x;
+            }
+            else if(x < X_MIN)
+            {
+                X_MIN = x;
+            }
+            if(y > Y_MAX)
+            {
+                Y_MAX = y;
+            }
+            else if(y < Y_MIN)
+            {
+                Y_MIN = y;
+            }
+        }
+        else if(line[0] == 'f')
+        {
+            u32 a, b, c;
+            if(sscanf(line + 1, "%u %u %u", &a, &b, &c) != 3)
+            {
+                printf("error.\n");
+            }
+            indices[fi++] = a;
+            indices[fi++] = b;
+            indices[fi++] = c;
+        }
+    }
+    fclose(f);
+
+    mesh->vertex_count = vertex_count;
+    mesh->index_count = index_count;
+    mesh->vertices = vertices;
+    mesh->indices = indices;
+}
+
+static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_vertex vc, color_rgba color)
+{
+    f32 w = (f32)image->width;
+    f32 h = (f32)image->height;
+    // super hacky hack:
+    // first subtract min so that every value is between 0 and (MAX - MIN)
+    // then divide by (MAX - MIN) to get a value between 0 and 1
+    // then multiply by width/height to make the vertex fit the entire screen
+    vec2 a = {((va.px - X_MIN) / (X_MAX - X_MIN)) * w, ((va.py - Y_MIN) / (Y_MAX - Y_MIN)) * h};
+    vec2 b = {((vb.px - X_MIN) / (X_MAX - X_MIN)) * w, ((vb.py - Y_MIN) / (Y_MAX - Y_MIN)) * h};
+    vec2 c = {((vc.px - X_MIN) / (X_MAX - X_MIN)) * w, ((vc.py - Y_MIN) / (Y_MAX - Y_MIN)) * h};
+    DrawLine(image, a, b, color);
+    DrawLine(image, b, c, color);
+    DrawLine(image, c, a, color);
+}
+
+static void SfMeshDraw(sf_image *image, sf_mesh *mesh, color_rgba color)
+{
+    for(u32 i = 0; i < mesh->index_count; i+=3)
+    {
+        u32 a = mesh->indices[i]; 
+        u32 b = mesh->indices[i + 1];
+        u32 c = mesh->indices[i + 2];
+        sf_vertex va = mesh->vertices[a];
+        sf_vertex vb = mesh->vertices[b];
+        sf_vertex vc = mesh->vertices[c];
+        DrawTriangle(image, va, vb, vc, color);
+    }
 }
 
 int main(void)
 {
-    u32 image_width = 64;
-    u32 image_height = 64;
+    u32 image_width = 640;
+    u32 image_height = 480;
     sf_image *image = SfImageMake(image_width, image_height);
     for(u32 y = 0; y < image_height; y++)
     {
@@ -158,10 +275,16 @@ int main(void)
     vec4 black = {0.0f, 0.0f, 0.0f, 1.0f};
     vec4 red = {1.0f, 0.0f, 0.0f, 1.0f};
     vec4 yellow = {1.0f, 1.0f, 0.0f, 1.0f};
+    vec4 green = {0.0f, 1.0f, 0.0f, 1.0f};
     DrawLine(image, PixelCenterFromCoords(4, 4), PixelCenterFromCoords(20, 50), ColorFromVec(black));
     DrawRectangle(image, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(yellow));
     DrawLine(image, PixelCenterFromCoords(32, 32), PixelCenterFromCoords(56, 10), ColorFromVec(red));
-    SfImageRenderAndWriteToDisk(image, "out.png");
+   
+    sf_mesh *cow = (sf_mesh*)malloc(sizeof(sf_mesh));
+    SfMeshMake(cow, "assets/cow.obj");
+    SfMeshDraw(image, cow, ColorFromVec(green));
+
+    SfImageWriteToDisk(image, "out1.png");
 
     exit(0);
 }
