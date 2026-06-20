@@ -234,7 +234,7 @@ static inline f32 ComputeTriangleArea(vec2 a, vec2 b, vec2 c)
     return(result);
 }
 
-static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_vertex vc, color_rgba color)
+static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_vertex vc)
 {
     f32 w = (f32)image->width;
     f32 h = (f32)image->height;
@@ -365,7 +365,8 @@ static inline void DrawTriangle(sf_image *image, sf_vertex va, sf_vertex vb, sf_
             }
             else
             {
-                WritePixel(image, (u32)x, y, color);
+                vec4 color = {alpha, beta, gamma, 1.0f};
+                WritePixel(image, (u32)x, y, ColorFromVec(color));
             }
         }
     }
@@ -387,7 +388,7 @@ static void SfMeshDraw(sf_image *image, sf_mesh *mesh, color_rgba color)
         sf_vertex va = mesh->vertices[a];
         sf_vertex vb = mesh->vertices[b];
         sf_vertex vc = mesh->vertices[c];
-        DrawTriangle(image, va, vb, vc, color);
+        DrawTriangle(image, va, vb, vc);
     }
 }
 
